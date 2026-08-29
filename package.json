@@ -1,0 +1,42 @@
+{
+  "name": "pi-gmicloud-ai",
+  "version": "0.1.0",
+  "description": "Pi extension for GMI Cloud Inference Engine — OpenAI-compatible chat, vision (VLM), and embeddings",
+  "keywords": [
+    "pi-package",
+    "gmi",
+    "gmicloud",
+    "gmi-serving",
+    "inference-engine",
+    "openai-compatible"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pgciq/pi-gmicloud-ai"
+  },
+  "files": [
+    "extensions",
+    "README.md"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "dependencies": {
+    "@earendil-works/pi-tui": "^0.84.3"
+  }
+}
