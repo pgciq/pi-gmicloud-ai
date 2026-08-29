@@ -1,6 +1,6 @@
 {
   "name": "pi-gmicloud-ai",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi extension for GMI Cloud Inference Engine — OpenAI-compatible chat, vision (VLM), and embeddings",
   "keywords": [
     "pi-package",
