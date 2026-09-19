@@ -13,8 +13,16 @@ directly from Pi.
 export GMI_API_KEY=eyJhbGci...          # JWT from https://console.gmicloud.ai → API Keys
 ```
 
-The key is a JWT issued by GMI Cloud with scope `ie_model` / product `IE`.
-Paste the full token as the value of `GMI_API_KEY`.
+Or store the token through Pi:
+
+```text
+/login gmi
+```
+
+Pi saves it in `~/.pi/agent/auth.json`; `GMI_API_KEY` remains supported as a
+fallback. This also applies to `/gmi-tts`, `/gmi-music`, `/gmi-image`, and the
+model-listing commands.
+
 
 Install like any pi extension:
 

@@ -7,8 +7,8 @@ function loadExtension() {
   const renderers = {};
   let config;
   extension({
-    registerProvider(_name, providerConfig) {
-      config = providerConfig;
+    registerProvider(...args) {
+      config = args.length === 1 ? args[0] : args[1];
     },
     registerEntryRenderer(name, fn) {
       renderers[name] = fn;

@@ -144,10 +144,10 @@ function convertModel(model: any) {
   };
 }
 
-async function fetchModels(baseUrl: string, signal?: AbortSignal) {
-  const apiKey = process.env[API_KEY_ENV];
+async function fetchModels(baseUrl: string, signal?: AbortSignal, apiKey?: string) {
+  const key = apiKey ?? process.env[API_KEY_ENV];
   const headers: Record<string, string> = {};
-  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  if (key) headers["Authorization"] = `Bearer ${key}`;
 
   const res = await fetch(`${baseUrl}/models`, { headers, redirect: "follow", signal });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -459,6 +459,11 @@ function registerMediaCommands(pi: any) {
     else console.log(markdown);
   }
 
+  async function getGmiApiKey(ctx: any) {
+    const stored = await ctx?.modelRegistry?.getApiKeyForProvider?.("gmi");
+    return stored ?? process.env[API_KEY_ENV] ?? "";
+  }
+
   function parseFlags(args: string) {
     const flags: Record<string, string> = {};
     const rest: string[] = [];
@@ -478,7 +483,7 @@ function registerMediaCommands(pi: any) {
     description:
       "Generate speech via GMI MiniMax Speech 2.8 TTS (free 2026-08-24→09-06). Usage: /gmi-tts [--voice <id>] [--model minimax-tts-speech-2.8-turbo|hd] <text>",
     handler: async (args: string, ctx: any) => {
-      const apiKey = process.env[API_KEY_ENV];
+      const apiKey = await getGmiApiKey(ctx);
       if (!apiKey) {
         output(ctx, "⚠️ Set GMI_API_KEY to use GMI audio generation.");
         return;
@@ -511,7 +516,7 @@ function registerMediaCommands(pi: any) {
     description:
       "Generate music via GMI MiniMax Music 3.0 (free 2026-08-24→09-06). Usage: /gmi-music [--prompt \"<style>\"] <lyrics>",
     handler: async (args: string, ctx: any) => {
-      const apiKey = process.env[API_KEY_ENV];
+      const apiKey = await getGmiApiKey(ctx);
       if (!apiKey) {
         output(ctx, "⚠️ Set GMI_API_KEY to use GMI audio generation.");
         return;
@@ -550,7 +555,7 @@ function registerMediaCommands(pi: any) {
     description:
       "Generate an image via GMI (seedream-5.0-pro by default; others via --model). Usage: /gmi-image [--model <id>] [--size 2K|3K|WxH] <prompt>",
     handler: async (args: string, ctx: any) => {
-      const apiKey = process.env[API_KEY_ENV];
+      const apiKey = await getGmiApiKey(ctx);
       if (!apiKey) {
         output(ctx, "⚠️ Set GMI_API_KEY to use GMI image generation.");
         return;
@@ -587,7 +592,7 @@ function registerMediaCommands(pi: any) {
   pi.registerCommand("gmi-audio-models", {
     description: "List GMI audio/music models and the default TTS voice. Usage: /gmi-audio-models [tts|music|all]",
     handler: async (args: string, ctx: any) => {
-      const apiKey = process.env[API_KEY_ENV];
+      const apiKey = await getGmiApiKey(ctx);
       if (!apiKey) {
         output(ctx, "⚠️ Set GMI_API_KEY to list models.");
         return;
@@ -642,7 +647,7 @@ function registerMediaCommands(pi: any) {
     description:
       "List GMI models with a FREE badge + capability. Chat + media default to FREE-only; use --all to show every model. Usage: /gmi-models [chat|audio|music|image|video|all] [--free|--all]",
     handler: async (args: string, ctx: any) => {
-      const apiKey = process.env[API_KEY_ENV];
+      const apiKey = await getGmiApiKey(ctx);
       if (!apiKey) {
         output(ctx, "⚠️ Set GMI_API_KEY to list models.");
         return;
@@ -664,7 +669,7 @@ function registerMediaCommands(pi: any) {
         if (wantChat) {
           let models: any[];
           try {
-            models = dedupChatModels(await fetchModels(UNIFIED_BASE, ctx?.signal));
+            models = dedupChatModels(await fetchModels(UNIFIED_BASE, ctx?.signal, apiKey));
           } catch {
             models = dedupChatModels(SEED.map((id) => {
               const m = convertModel({ id });
@@ -748,27 +753,40 @@ export default function (pi: any) {
   const baseUrl = UNIFIED_BASE;
   const apiKeyEnv = API_KEY_ENV;
 
-  pi.registerProvider("gmi", {
+  let currentModels = SEED.map((id) => convertModel({ id }));
+  const provider = {
+    id: "gmi",
     name: "GMI Cloud",
     baseUrl,
-    // Keep this as an env reference even when the variable is absent. Pi can
-    // then mark the provider as unconfigured instead of using a placeholder key.
-    apiKey: `$${apiKeyEnv}`,
+    auth: {
+      apiKey: {
+        name: "GMI Cloud API Key",
+        async login(interaction: any) {
+          const key = await interaction.prompt({ type: "secret", message: "GMI Cloud API Key" });
+          if (!key.trim()) throw new Error("GMI Cloud API Key cannot be empty");
+          return { type: "api_key", key: key.trim() };
+        },
+        async resolve({ credential, ctx }: any) {
+          const key = credential?.key ?? await ctx.env(apiKeyEnv);
+          return key ? { auth: { apiKey: key }, source: credential?.key ? "stored API key" : apiKeyEnv } : undefined;
+        },
+      },
+    },
+    getModels: () => currentModels,
+    get models() { return currentModels; },
     api: "openai-completions",
+    stream: streamGmi,
     streamSimple: streamGmi,
-    models: SEED.map((id) => convertModel({ id })),
-
-    async refreshModels({ signal, stored, publish, allowNetwork }) {
+    async refreshModels({ signal, stored, publish, allowNetwork, credential }) {
       const cachedModels = Array.isArray(stored?.models) ? stored.models : undefined;
       const seedModels = SEED.map((id) => convertModel({ id }));
 
-      if (allowNetwork === false || signal?.aborted) {
-        return cachedModels?.length ? cachedModels : seedModels;
-      }
+      if (cachedModels?.length) currentModels = cachedModels;
+      if (allowNetwork === false || signal?.aborted) return currentModels;
 
       let models;
       try {
-        const fetched = await fetchModels(UNIFIED_BASE, signal);
+        const fetched = await fetchModels(UNIFIED_BASE, signal, credential?.key);
         // GMI lists free chat models as a duplicate (priced + zero-price) /v1/models
         // row; collapse to one entry (preferring the FREE copy) so the picker and
         // catalog don't show the same id twice.
@@ -778,12 +796,22 @@ export default function (pi: any) {
       }
 
       if (models.length > 0) {
+        currentModels = models;
         await publish({ persist: { provider: "gmi", models } });
         return models;
       }
 
-      return cachedModels?.length ? cachedModels : seedModels;
+      return currentModels.length ? currentModels : seedModels;
     },
+  };
+  pi.registerProvider(provider.id, {
+    name: provider.name,
+    baseUrl: provider.baseUrl,
+    api: "openai-completions",
+    apiKey: "$GMI_API_KEY",
+    streamSimple: provider.streamSimple,
+    models: provider.getModels(),
+    refreshModels: provider.refreshModels,
   });
 
   // Media generation commands (TTS / music / image via GMI request-queue API).
